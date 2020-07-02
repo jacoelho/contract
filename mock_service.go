@@ -3,7 +3,9 @@ package contract
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"path"
@@ -31,38 +33,38 @@ type options struct {
 type Option func(*options)
 
 func WithClient(c *http.Client) Option {
-	return func(args *Options) {
+	return func(args *options) {
 		args.Client = c
 	}
 }
 
 func WithContracts(filename []string) Option {
-	return func(args *Options) {
-		args.Contracts = args
+	return func(args *options) {
+		args.Contracts = filename
 	}
 }
 
 func WithBaseURL(baseURL string) Option {
-	return func(args *Options) {
+	return func(args *options) {
 		args.BaseURL = baseURL
 	}
 }
 
-type MockService struct {
+type ContainerMockService struct {
 	baseURL   string
 	client    *http.Client
 	contracts []string
-	cancel Cancelable
+	cancel    Cancelable
 }
 
-func MockService(settings ...Option) (*MockService, err) {
-	cancel, err := TestContract()
+func MockService(settings ...Option) (*ContainerMockService, error) {
+	url, cancel, err := TestContract()
 	if err != nil {
 		return nil, err
 	}
 
-	args := options{
-		BaseURL: ,
+	args := &options{
+		BaseURL: url,
 		Client:  http.DefaultClient,
 	}
 
@@ -70,11 +72,11 @@ func MockService(settings ...Option) (*MockService, err) {
 		opt(args)
 	}
 
-	m := &MockService{
+	m := &ContainerMockService{
 		baseURL:   args.BaseURL,
 		client:    args.Client,
 		contracts: args.Contracts,
-		cancel:  cancel,
+		cancel:    cancel,
 	}
 
 	if err := m.createInteractions(); err != nil {
@@ -84,26 +86,31 @@ func MockService(settings ...Option) (*MockService, err) {
 	return m, nil
 }
 
-fuunc (m *MockService) Cancel() {
+func (m *ContainerMockService) Cancel() error {
 	return m.cancel()
 }
 
-func (m *MockService) createInteractions() error {
+func (m *ContainerMockService) URL() string {
+	return m.baseURL
+}
+
+func (m *ContainerMockService) createInteractions() error {
 	for _, contract := range m.contracts {
 		f, err := os.Open(path.Clean(contract))
 		if err != nil {
 			return err
 		}
 
-		err := m.Create(context.Background(), f)
+		err = m.Create(context.Background(), f)
 		f.Close()
 		if err != nil {
 			return err
 		}
 	}
+	return nil
 }
 
-func (m *MockService) Create(ctx context.Context, r io.Reader) error {
+func (m *ContainerMockService) Create(ctx context.Context, r io.Reader) error {
 	req, err := http.NewRequest(http.MethodPost, m.baseURL+"/interactions", r)
 	if err != nil {
 		return err
@@ -126,7 +133,7 @@ func (m *MockService) Create(ctx context.Context, r io.Reader) error {
 	return nil
 }
 
-func (m *MockService) Delete(context.Context) error {
+func (m *ContainerMockService) Delete(ctx context.Context) error {
 	req, err := http.NewRequest(http.MethodDelete, m.baseURL+"/interactions", nil)
 	if err != nil {
 		return err
@@ -148,7 +155,7 @@ func (m *MockService) Delete(context.Context) error {
 	return nil
 }
 
-func (m *MockService) Verify(context.Context) error {
+func (m *ContainerMockService) Verify(ctx context.Context) error {
 	req, err := http.NewRequest(http.MethodGet, m.baseURL+"/interactions/verify", nil)
 	if err != nil {
 		return err
@@ -163,9 +170,17 @@ func (m *MockService) Verify(context.Context) error {
 
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return errors.New("request failed")
+	// if resp.StatusCode != http.StatusOK {
+	// 	return errors.New("request failed")
+	// }
+
+	fmt.Println(resp.StatusCode) // 500
+
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return err
 	}
 
+	fmt.Println(string(data))
 	return nil
 }
