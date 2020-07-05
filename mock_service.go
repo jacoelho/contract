@@ -26,9 +26,9 @@ type options struct {
 
 type Option func(*options)
 
-func WithClient(c *http.Client) Option {
+func WithClient(client *http.Client) Option {
 	return func(args *options) {
-		args.client = c
+		args.client = client
 	}
 }
 
@@ -46,75 +46,75 @@ func WithBackend(b Backend) Option {
 	}
 }
 
-type ContainerMockService struct {
+type MockService struct {
 	backend   Backend
-	client    *http.Client
 	contracts []string
+	client    *http.Client
 	baseURL   string
 }
 
-func MockService(t *testing.T, settings ...Option) *ContainerMockService {
+func TestingMockService(t *testing.T, settings ...Option) *MockService {
 	args := &options{}
 
 	for _, opt := range settings {
 		opt(args)
 	}
 
-	m := &ContainerMockService{
-		client:    args.client,
+	mock := &MockService{
 		contracts: args.contracts,
 	}
 
-	if m.client == nil {
-		m.client = http.DefaultClient
+	if mock.client == nil {
+		mock.client = http.DefaultClient
 	}
 
-	if m.backend == nil {
+	if mock.backend == nil {
 		b, err := NewContractContainer(ContractContainerConfig{})
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		m.backend = b
+		mock.backend = b
 	}
 
-	if err := m.backend.Run(); err != nil {
+	if err := mock.backend.Run(); err != nil {
 		t.Fatal(err)
 	}
 
-	baseURL, err := m.backend.BaseURL()
+	baseURL, err := mock.backend.BaseURL()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	m.baseURL = baseURL
+	mock.baseURL = baseURL
 
-	if err := m.createInteractions(context.Background()); err != nil {
+	// clean-up any health check interaction
+	if err := mock.Delete(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := mock.createInteractions(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 
 	t.Cleanup(func() {
-		if err := m.Verify(context.Background()); err != nil {
+		if err := mock.Verify(context.Background()); err != nil {
 			t.Error(err)
 		}
 
-		if err := m.backend.Stop(); err != nil {
+		if err := mock.backend.Stop(); err != nil {
 			t.Error(err)
 		}
 	})
 
-	return m
+	return mock
 }
 
-func (m *ContainerMockService) URL() string {
+func (m *MockService) URL() string {
 	return m.baseURL
 }
 
-func (m *ContainerMockService) createInteractions(ctx context.Context) error {
-	if err := m.Delete(ctx); err != nil {
-		return err
-	}
-
+func (m *MockService) createInteractions(ctx context.Context) error {
 	for _, contract := range m.contracts {
 		f, err := os.Open(path.Clean(contract))
 		if err != nil {
@@ -130,7 +130,7 @@ func (m *ContainerMockService) createInteractions(ctx context.Context) error {
 	return nil
 }
 
-func (m *ContainerMockService) Create(ctx context.Context, r io.Reader) error {
+func (m *MockService) Create(ctx context.Context, r io.Reader) error {
 	req, err := http.NewRequest(http.MethodPost, m.baseURL+"/interactions", r)
 	if err != nil {
 		return err
@@ -144,16 +144,10 @@ func (m *ContainerMockService) Create(ctx context.Context, r io.Reader) error {
 		return err
 	}
 
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return errors.New("request failed")
-	}
-
-	return nil
+	return checkHttpStatus(resp)
 }
 
-func (m *ContainerMockService) Delete(ctx context.Context) error {
+func (m *MockService) Delete(ctx context.Context) error {
 	req, err := http.NewRequest(http.MethodDelete, m.baseURL+"/interactions", nil)
 	if err != nil {
 		return err
@@ -167,16 +161,10 @@ func (m *ContainerMockService) Delete(ctx context.Context) error {
 		return err
 	}
 
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return errors.New("request failed")
-	}
-
-	return nil
+	return checkHttpStatus(resp)
 }
 
-func (m *ContainerMockService) Verify(ctx context.Context) error {
+func (m *MockService) Verify(ctx context.Context) error {
 	req, err := http.NewRequest(http.MethodGet, m.baseURL+"/interactions/verification", nil)
 	if err != nil {
 		return err
@@ -190,6 +178,10 @@ func (m *ContainerMockService) Verify(ctx context.Context) error {
 		return err
 	}
 
+	return checkHttpStatus(resp)
+}
+
+func checkHttpStatus(resp *http.Response) error {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
