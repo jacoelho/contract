@@ -1,7 +1,6 @@
 package contract_test
 
 import (
-	"context"
 	"net/http"
 	"testing"
 
@@ -9,20 +8,11 @@ import (
 )
 
 func TestContract(t *testing.T) {
-	mock, err := contract.MockService(contract.WithContracts([]string{"fixtures/simple.json"}))
-	if err != nil {
-		t.Fatal(err)
-	}
+	pact := contract.MockService(t, contract.WithContracts([]string{"fixtures/simple.json"}))
 
-	defer mock.Cancel()
-
-	resp, err := http.Get(mock.URL() + "/bla")
+	resp, err := http.Get(pact.URL() + "/path")
 	if err != nil {
 		t.Error(err)
 	}
-	defer resp.Body.Close()
-
-	if err := mock.Verify(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	defer func() { _ = resp.Body.Close() }()
 }

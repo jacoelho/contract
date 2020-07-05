@@ -3,19 +3,13 @@ package contract
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"path"
+	"testing"
 )
-
-type Interactor interface {
-	Create(context.Context, io.Reader) error
-	Delete(context.Context) error
-	Verify(context.Context) error
-}
 
 const (
 	pactHeader      = "X-Pact-Mock-Service"
@@ -25,84 +19,110 @@ const (
 )
 
 type options struct {
-	BaseURL   string
-	Client    *http.Client
-	Contracts []string
+	backend   Backend
+	client    *http.Client
+	contracts []string
 }
 
 type Option func(*options)
 
 func WithClient(c *http.Client) Option {
 	return func(args *options) {
-		args.Client = c
+		args.client = c
 	}
 }
 
-func WithContracts(filename []string) Option {
+func WithContracts(filenames []string) Option {
 	return func(args *options) {
-		args.Contracts = filename
+		args.contracts = filenames
 	}
 }
 
-func WithBaseURL(baseURL string) Option {
+func WithBackend(b Backend) Option {
 	return func(args *options) {
-		args.BaseURL = baseURL
+		if b != nil {
+			args.backend = b
+		}
 	}
 }
 
 type ContainerMockService struct {
-	baseURL   string
+	backend   Backend
 	client    *http.Client
 	contracts []string
-	cancel    Cancelable
+	baseURL   string
 }
 
-func MockService(settings ...Option) (*ContainerMockService, error) {
-	url, cancel, err := TestContract()
-	if err != nil {
-		return nil, err
-	}
-
-	args := &options{
-		BaseURL: url,
-		Client:  http.DefaultClient,
-	}
+func MockService(t *testing.T, settings ...Option) *ContainerMockService {
+	args := &options{}
 
 	for _, opt := range settings {
 		opt(args)
 	}
 
 	m := &ContainerMockService{
-		baseURL:   args.BaseURL,
-		client:    args.Client,
-		contracts: args.Contracts,
-		cancel:    cancel,
+		client:    args.client,
+		contracts: args.contracts,
 	}
 
-	if err := m.createInteractions(); err != nil {
-		return nil, err
+	if m.client == nil {
+		m.client = http.DefaultClient
 	}
 
-	return m, nil
-}
+	if m.backend == nil {
+		b, err := NewContractContainer(ContractContainerConfig{})
+		if err != nil {
+			t.Fatal(err)
+		}
 
-func (m *ContainerMockService) Cancel() error {
-	return m.cancel()
+		m.backend = b
+	}
+
+	if err := m.backend.Run(); err != nil {
+		t.Fatal(err)
+	}
+
+	baseURL, err := m.backend.BaseURL()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m.baseURL = baseURL
+
+	if err := m.createInteractions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		if err := m.Verify(context.Background()); err != nil {
+			t.Error(err)
+		}
+
+		if err := m.backend.Stop(); err != nil {
+			t.Error(err)
+		}
+	})
+
+	return m
 }
 
 func (m *ContainerMockService) URL() string {
 	return m.baseURL
 }
 
-func (m *ContainerMockService) createInteractions() error {
+func (m *ContainerMockService) createInteractions(ctx context.Context) error {
+	if err := m.Delete(ctx); err != nil {
+		return err
+	}
+
 	for _, contract := range m.contracts {
 		f, err := os.Open(path.Clean(contract))
 		if err != nil {
 			return err
 		}
 
-		err = m.Create(context.Background(), f)
-		f.Close()
+		err = m.Create(ctx, f)
+		_ = f.Close()
 		if err != nil {
 			return err
 		}
@@ -124,7 +144,7 @@ func (m *ContainerMockService) Create(ctx context.Context, r io.Reader) error {
 		return err
 	}
 
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return errors.New("request failed")
@@ -140,13 +160,14 @@ func (m *ContainerMockService) Delete(ctx context.Context) error {
 	}
 
 	req.Header.Add(pactHeader, pactHeaderValue)
+	req.Header.Add(contentType, contentTypeJSON)
 
 	resp, err := m.client.Do(req.WithContext(ctx))
 	if err != nil {
 		return err
 	}
 
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return errors.New("request failed")
@@ -156,31 +177,28 @@ func (m *ContainerMockService) Delete(ctx context.Context) error {
 }
 
 func (m *ContainerMockService) Verify(ctx context.Context) error {
-	req, err := http.NewRequest(http.MethodGet, m.baseURL+"/interactions/verify", nil)
+	req, err := http.NewRequest(http.MethodGet, m.baseURL+"/interactions/verification", nil)
 	if err != nil {
 		return err
 	}
 
 	req.Header.Add(pactHeader, pactHeaderValue)
+	req.Header.Add(contentType, contentTypeJSON)
 
 	resp, err := m.client.Do(req.WithContext(ctx))
 	if err != nil {
 		return err
 	}
 
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
-	// if resp.StatusCode != http.StatusOK {
-	// 	return errors.New("request failed")
-	// }
-
-	fmt.Println(resp.StatusCode) // 500
-
-	data, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return err
+	if resp.StatusCode != http.StatusOK {
+		data, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		return errors.New(string(data))
 	}
 
-	fmt.Println(string(data))
 	return nil
 }
