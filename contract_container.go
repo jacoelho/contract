@@ -15,32 +15,32 @@ const (
 	defaultPort       = "1234"
 )
 
-var _ Backend = (*ContractContainer)(nil)
+var _ Backend = (*Container)(nil)
 
-type ContractContainerConfig struct {
+type ContainerConfig struct {
 	Repository string
 	Tag        string
 }
 
-type ContractContainer struct {
+type Container struct {
 	repository string
 	tag        string
 	resource   *dockertest.Resource
 	mtx        sync.Mutex
 }
 
-func NewContractContainer(cfg ContractContainerConfig) (*ContractContainer, error) {
+func NewContractContainer(cfg ContainerConfig) (*Container, error) {
 	if cfg.Repository == "" {
 		cfg.Repository = defaultRepository
 	}
 
-	return &ContractContainer{
+	return &Container{
 		repository: cfg.Repository,
 		tag:        cfg.Tag,
 	}, nil
 }
 
-func (c *ContractContainer) Run() error {
+func (c *Container) Run() error {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
@@ -72,7 +72,7 @@ func (c *ContractContainer) Run() error {
 	return nil
 }
 
-func (c *ContractContainer) Stop() error {
+func (c *Container) Stop() error {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
@@ -93,7 +93,7 @@ func (c *ContractContainer) Stop() error {
 	return nil
 }
 
-func (c *ContractContainer) BaseURL() (string, error) {
+func (c *Container) BaseURL() (string, error) {
 	c.mtx.Lock()
 
 	if c.resource == nil {
