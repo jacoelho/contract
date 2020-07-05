@@ -31,6 +31,6 @@ Every test runs in a different container making `t.Parallel()` safe.
 
 ## License
 
-GNU General Public License v3.0 or later
+The MIT License (MIT)
 
 See [LICENSE](LICENSE) to see the full text.
