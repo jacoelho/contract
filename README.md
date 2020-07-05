@@ -1,6 +1,6 @@
 # Contract
 
-Contract testing using [Pact](https://docs.pact.io/) and [Mock Service](https://github.com/pact-foundation/pact-mock_service).
+[Go](https://golang.org/) Contract testing using [Pact](https://docs.pact.io/) and [Mock Service](https://github.com/pact-foundation/pact-mock_service).
 
 ## Usage
 
