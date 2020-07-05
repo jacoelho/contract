@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"testing"
+	"time"
 )
 
 const (
@@ -22,39 +23,56 @@ type options struct {
 	backend   Backend
 	client    *http.Client
 	contracts []string
+	timeout   time.Duration
 }
 
 type Option func(*options)
 
+// WithClient allows to specify a custom *http.Client
 func WithClient(client *http.Client) Option {
 	return func(args *options) {
 		args.client = client
 	}
 }
 
+// WithContracts allows to specify which interactions should be loaded
 func WithContracts(filenames []string) Option {
 	return func(args *options) {
 		args.contracts = filenames
 	}
 }
 
+// WithBackend allows to use a custom backend
+// by default a container will be used
 func WithBackend(b Backend) Option {
 	return func(args *options) {
-		if b != nil {
-			args.backend = b
-		}
+		args.backend = b
 	}
 }
 
+// WithTimeout specifies how long to wait for an http request to the mock service
+func WithTimeout(duration time.Duration) Option {
+	return func(args *options) {
+		args.timeout = duration
+	}
+}
+
+// MockService represents a HTTP mock/stub implementation of Pact
 type MockService struct {
 	backend   Backend
 	contracts []string
 	client    *http.Client
 	baseURL   string
+	timeout   time.Duration
 }
 
+// TestingMockService creates a testing mock service
+// test will fail if a call to verification return errors
 func TestingMockService(t *testing.T, settings ...Option) *MockService {
-	args := &options{}
+	args := &options{
+		client:  http.DefaultClient,
+		timeout: 5 * time.Second,
+	}
 
 	for _, opt := range settings {
 		opt(args)
@@ -62,10 +80,8 @@ func TestingMockService(t *testing.T, settings ...Option) *MockService {
 
 	mock := &MockService{
 		contracts: args.contracts,
-	}
-
-	if mock.client == nil {
-		mock.client = http.DefaultClient
+		timeout:   args.timeout,
+		client:    args.client,
 	}
 
 	if mock.backend == nil {
@@ -88,17 +104,11 @@ func TestingMockService(t *testing.T, settings ...Option) *MockService {
 
 	mock.baseURL = baseURL
 
-	// clean-up any health check interaction
-	if err := mock.Delete(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := mock.createInteractions(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-
 	t.Cleanup(func() {
-		if err := mock.Verify(context.Background()); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), mock.timeout)
+		defer cancel()
+
+		if err := mock.Verify(ctx); err != nil {
 			t.Error(err)
 		}
 
@@ -107,9 +117,24 @@ func TestingMockService(t *testing.T, settings ...Option) *MockService {
 		}
 	})
 
+	deleteCtx, deleteCancel := context.WithTimeout(context.Background(), mock.timeout)
+	defer deleteCancel()
+
+	// clean-up any health check interaction
+	if err := mock.Delete(deleteCtx); err != nil {
+		t.Fatal(err)
+	}
+
+	createCtx, createCancel := context.WithTimeout(context.Background(), mock.timeout)
+	defer createCancel()
+	if err := mock.createInteractions(createCtx); err != nil {
+		t.Fatal(err)
+	}
+
 	return mock
 }
 
+// URL returns a URL ready to be interacted, URL will be have the form `localhost:port`
 func (m *MockService) URL() string {
 	return m.baseURL
 }
@@ -130,6 +155,7 @@ func (m *MockService) createInteractions(ctx context.Context) error {
 	return nil
 }
 
+// Create creates an interaction to be tested
 func (m *MockService) Create(ctx context.Context, r io.Reader) error {
 	req, err := m.newHttpRequest(http.MethodPost, "/interactions", r)
 	if err != nil {
@@ -144,6 +170,7 @@ func (m *MockService) Create(ctx context.Context, r io.Reader) error {
 	return checkHttpStatus(resp)
 }
 
+// Delete deletes all interactions
 func (m *MockService) Delete(ctx context.Context) error {
 	req, err := m.newHttpRequest(http.MethodDelete, "/interactions", nil)
 	if err != nil {
@@ -158,6 +185,7 @@ func (m *MockService) Delete(ctx context.Context) error {
 	return checkHttpStatus(resp)
 }
 
+// Verify verifies interactions
 func (m *MockService) Verify(ctx context.Context) error {
 	req, err := m.newHttpRequest(http.MethodGet, "/interactions/verification", nil)
 	if err != nil {
