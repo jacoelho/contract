@@ -134,7 +134,7 @@ func TestingMockService(t *testing.T, settings ...Option) *MockService {
 	return mock
 }
 
-// URL returns a URL ready to be interacted, URL will be have the form `localhost:port`
+// URL returns a URL ready to be interacted, URL will be have the form `http://localhost:port`
 func (m *MockService) URL() string {
 	return m.baseURL
 }
