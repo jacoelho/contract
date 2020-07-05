@@ -69,7 +69,7 @@ func TestingMockService(t *testing.T, settings ...Option) *MockService {
 	}
 
 	if mock.backend == nil {
-		b, err := NewContractContainer(ContractContainerConfig{})
+		b, err := NewContractContainer(ContainerConfig{})
 		if err != nil {
 			t.Fatal(err)
 		}

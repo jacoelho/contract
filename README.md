@@ -27,7 +27,7 @@ func TestIntegration(t *testing.T) {
 
 Interactions will be verified when test is clean-up (requires go 1.14).
 
-Every test runs in a different container so using `t.Parallel()` doesn't cause any false positives.
+Every test runs in a different container making `t.Parallel()` safe.
 
 ## License
 
