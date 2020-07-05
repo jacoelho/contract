@@ -131,13 +131,10 @@ func (m *MockService) createInteractions(ctx context.Context) error {
 }
 
 func (m *MockService) Create(ctx context.Context, r io.Reader) error {
-	req, err := http.NewRequest(http.MethodPost, m.baseURL+"/interactions", r)
+	req, err := m.newHttpRequest(http.MethodPost, "/interactions", r)
 	if err != nil {
 		return err
 	}
-
-	req.Header.Add(pactHeader, pactHeaderValue)
-	req.Header.Add(contentType, contentTypeJSON)
 
 	resp, err := m.client.Do(req.WithContext(ctx))
 	if err != nil {
@@ -148,13 +145,10 @@ func (m *MockService) Create(ctx context.Context, r io.Reader) error {
 }
 
 func (m *MockService) Delete(ctx context.Context) error {
-	req, err := http.NewRequest(http.MethodDelete, m.baseURL+"/interactions", nil)
+	req, err := m.newHttpRequest(http.MethodDelete, "/interactions", nil)
 	if err != nil {
 		return err
 	}
-
-	req.Header.Add(pactHeader, pactHeaderValue)
-	req.Header.Add(contentType, contentTypeJSON)
 
 	resp, err := m.client.Do(req.WithContext(ctx))
 	if err != nil {
@@ -165,13 +159,10 @@ func (m *MockService) Delete(ctx context.Context) error {
 }
 
 func (m *MockService) Verify(ctx context.Context) error {
-	req, err := http.NewRequest(http.MethodGet, m.baseURL+"/interactions/verification", nil)
+	req, err := m.newHttpRequest(http.MethodGet, "/interactions/verification", nil)
 	if err != nil {
 		return err
 	}
-
-	req.Header.Add(pactHeader, pactHeaderValue)
-	req.Header.Add(contentType, contentTypeJSON)
 
 	resp, err := m.client.Do(req.WithContext(ctx))
 	if err != nil {
@@ -179,6 +170,18 @@ func (m *MockService) Verify(ctx context.Context) error {
 	}
 
 	return checkHttpStatus(resp)
+}
+
+func (m *MockService) newHttpRequest(httpMethod, relativePath string, body io.Reader) (*http.Request, error) {
+	req, err := http.NewRequest(httpMethod, m.baseURL+relativePath, body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add(pactHeader, pactHeaderValue)
+	req.Header.Add(contentType, contentTypeJSON)
+
+	return req, nil
 }
 
 func checkHttpStatus(resp *http.Response) error {
