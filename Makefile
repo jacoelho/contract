@@ -6,27 +6,11 @@ DATE = $(shell date +%Y%m%d%H%M%S)
 
 export GOBIN=$(CURDIR)/bin
 
-default: build
-
-.PHONY: build
-build: test
-	go install -v ./...
-
-.PHONY: generate
-generate:
-	go generate -v ./...
+default: test
 
 .PHONY: test
 test:
 	go test -race -v ./...
-
-.PHONY: bench
-bench:
-	go test -bench=. -benchmem ./... | tee benchmarks/$(DATE).bench
-
-.PHONY: validation
-validation:
-	go test -race -v -tags validation ./...
 
 .PHONY: fmt
 fmt:
@@ -44,5 +28,4 @@ ci-tidy:
 .PHONY: lint
 lint:
 	docker run -t --rm -v $(CURDIR):/app -w /app golangci/golangci-lint:$(GOLINT_VERSION) golangci-lint run
-	docker run -t --rm -v $(CURDIR):/app -w /app/registry golangci/golangci-lint:$(GOLINT_VERSION) golangci-lint run
 
